@@ -1,0 +1,524 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 13 * * 5"
+            }
+          ]
+        }
+      },
+      "id": "590e1aba-41bb-422c-9cfb-b9a29dcd6c6e",
+      "name": "Every Friday 4pm",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -384,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.empty }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              },
+              "id": "5e35cd71-e3a5-40df-b1c0-d9fbd7d7d2d2"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "889f5de6-7a95-4d7c-b44b-422e8a8e1bba",
+      "name": "No Events This Week",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        288,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "=shadrackmeshack7@gmail.com",
+        "subject": "=Venture Support Log Saved — Week  {{ $('Filter This Week Only').item.json.weekStart }} to {{ $('Filter This Week Only').item.json.weekEnd }}",
+        "emailType": "text",
+        "message": "=Hi Elena,\n\nYour Venture Support time log for the week ending {{ $('Filter This Week Only').item.json.weekEnd }} has been automatically classified and saved to the master sheet.\n\nSUMMARY\n────────────────────────────────\n{{ $('AI Agent').all()[0].json.output.map(r => `• ${r.company} | ${r.function}: ${r.total_hours} hrs`).join('\\n') }}\n────────────────────────────────\n\n📊 View and verify your log:\nhttps://docs.google.com/spreadsheets/d/1Blxy1i3M89J8N2Nsmd1Zobjj7EGbYH3X4lGT-iFdwww/edit\n\n✏️ Something looks wrong? Request a correction:\nhttps://n8n.delta40.com/form/85f18f55-2580-481f-8899-e3b9d1cb34a4\n\nThanks,\nDelta40 Timesheet Agent",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "3c5b6169-e23b-49ea-8d27-3fe3e3cc2a09",
+      "name": "Send Summary Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1520,
+        352
+      ],
+      "webhookId": "7273362a-28fc-4980-a7d4-85ca47319fa4",
+      "executeOnce": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "WoNAnIB2nz17NKdh",
+          "name": "Gmail latest"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "investments@delta40.com",
+          "mode": "list",
+          "cachedResultName": "investments@delta40.com"
+        },
+        "returnAll": true,
+        "options": {
+          "timeMin": "={{ $now.startOf('week') }}",
+          "timeMax": "={{ $now.endOf('week') }}",
+          "singleEvents": true
+        }
+      },
+      "id": "ffb0cbdb-0a08-4395-b471-904d23ae66d4",
+      "name": "Fetch My Calendar Events1",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.1,
+      "position": [
+        -160,
+        336
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "wV0PJedrSmYytPC4",
+          "name": "Google investment Calendar"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        432,
+        544
+      ],
+      "id": "57e163a9-8e86-4584-9a55-a97edc104a90",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "lTGmD6f9uVgRc5ir",
+          "name": "Google Gemini Delta40"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.events }}",
+        "hasOutputParser": true,
+        "needsFallback": true,
+        "options": {
+          "systemMessage": "You are a time-tracking assistant for Delta40, an African venture studio.\nYour job is to classify calendar events and return a SUMMARISED JSON array. Respond ONLY with valid JSON — no explanation, no markdown, no code fences.\n\nPORTFOLIO COMPANIES (use these exact names):\nAll, Angaza, Biolite, Clean Crop, EcoWaka, Farm to Feed, Farmsky, Giraffe Bioenergy, GreenBay, Gridless, Lori, Nithio, Pocket Trees, PowerUP, Samaking, SunFi, Terra Lima\n\nSUPPORT FUNCTIONS (use these exact names — spelling and capitalisation must match exactly):\nStrategic Advisory, Financial Modeling, Fundraising, Grantwriting, Talent, Product Development, Research, Commercial, M&A Support, Cross Cutting, Ecosystem\n\nCLASSIFICATION RULES:\n- Match the event title and description to a portfolio company. If the event mentions 'portfolio', 'all portcos', or 'workshop', use company = 'All'.\n- Match to a support function based on the nature of the activity.\n- If no company can be determined, skip the event entirely.\n- If no function can be determined, use 'Cross Cutting'.\n- Calculate duration in hours (decimal, rounded to nearest 0.5).\n- SUMMARISE: if multiple events map to the same company + function, combine their hours into one row.\n\nOUTPUT FORMAT — return only this JSON structure:\n[\n  {\n    \"company\": \"Gridless\",\n    \"function\": \"Strategic Advisory\",\n    \"total_hours\": 2.5\n  }\n]\n\nNo other text. No markdown. Only the JSON array."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        496,
+        352
+      ],
+      "id": "0ad27831-e9c1-4081-a1ac-afba800846a4",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "[\n  {\n    \"company\": \"Gridless\",\n    \"function\": \"Strategic Advisory\",\n    \"total_hours\": 2.5\n  },\n  {\n    \"company\": \"Angaza\",\n    \"function\": \"Fundraising\",\n    \"total_hours\": 1.5\n  }\n]"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        720,
+        576
+      ],
+      "id": "60b38ec8-17da-44e2-95a4-96a910e85d41",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "const now    = new Date();\nconst monday = new Date(now);\nmonday.setDate(now.getDate() - ((now.getDay() + 6) % 7));\nmonday.setHours(0, 0, 0, 0);\n\nconst friday = new Date(monday);\nfriday.setDate(monday.getDate() + 4);\nfriday.setHours(23, 59, 59, 999);\n\n// ── ADD THIS ──────────────────────────────────────────────────\n// Shift boundaries 3 hours back to represent EAT midnight in UTC\n// Monday 00:00 EAT = Sunday 21:00 UTC\n// Friday 23:59 EAT = Friday 20:59 UTC\nconst EAT_OFFSET_MS = 3 * 60 * 60 * 1000;\nconst mondayEAT = new Date(monday.getTime() - EAT_OFFSET_MS);\nconst fridayEAT = new Date(friday.getTime() - EAT_OFFSET_MS);\nconst ceilingEAT = new Date(Math.min(fridayEAT.getTime(), now.getTime()));\n// ─────────────────────────────────────────────────────────────\n\nconst events = $input.all().map(i => i.json);\n\nconst filtered = events.filter(event => {\n  if (!event.start?.dateTime) return false;\n\n  const start = new Date(event.start.dateTime); // JS parses +03:00 → UTC internally\n  const end   = new Date(event.end?.dateTime || event.start.dateTime);\n\n  if (start < mondayEAT || start > ceilingEAT) return false; // ← use EAT boundaries\n\n  const hours = (end - start) / 3600000;\n  if (hours <= 0) return false;\n\n  const selfStatus = (event.attendees || []).find(a => a.self)?.responseStatus;\n  if (selfStatus === 'declined') return false;\n\n  return true;\n});\n\nconst weekStart = monday.toDateString();\nconst weekEnd   = friday.toDateString();\n\nconst cleanEvents = filtered.map(event => ({\n  title:       event.summary || '(No title)',\n  description: event.description || '',\n  start:       event.start.dateTime,\n  end:         event.end?.dateTime || event.start.dateTime,\n  attendees:   (event.attendees || []).map(a => a.email).join(', ')\n}));\n\nif (cleanEvents.length === 0) {\n  return [{ json: { weekStart, weekEnd, events: [], empty: true } }];\n}\n\nreturn [{ json: { weekStart, weekEnd, events: cleanEvents, empty: false } }];"
+      },
+      "id": "ecfc3148-c1c5-4090-b3f6-270e7493a40b",
+      "name": "Filter This Week Only",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        64,
+        336
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-5-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        544,
+        544
+      ],
+      "id": "a12538dd-ffe1-4569-a4e6-ae86febadab5",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "eGTNEOFksOIy1qrq",
+          "name": "OpenAi Delta40"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const COMPANIES = [\n  'All', 'Angaza', 'Biolite', 'Credify', 'EcoWaka',\n  'Farm to Feed', 'FarmSky', 'Flowt (New VB)', 'Giraffe Bioenergy',\n  'GreenBay', 'Gridless', 'Instollar', 'Lori', 'Nithio',\n  'PowerUP', 'Samaking', 'SunFi', 'Terra Lima', 'VetPower'\n];\n\nconst FUNCTION_TO_COLUMN = {\n  'Strategic Advisory':  'B',\n  'Financial Modeling':  'C',\n  'Fundraising':         'D',\n  'Grantwriting':        'E',\n  'Talent':              'F',\n  'Product Development': 'G',\n  'Research':            'H',\n  'Commercial':          'I',\n  'M&A Support':         'J',\n  'Cross Cutting':       'K',\n  'Ecosystem':           'L'\n};\n\nconst FIRST_WEEK_LABEL_ROW = 3;\nconst BLOCK_SIZE           = 22;\nconst COMPANIES_OFFSET     = 1;\nconst tabName              = 'Elana'; //Hello team change this to match your name as it appears in the sheet\n\nconst now    = new Date();\nconst monday = new Date(now);\nmonday.setDate(now.getDate() - ((now.getDay() + 6) % 7));\nmonday.setHours(0, 0, 0, 0);\nconst weekOfMonth  = Math.ceil(monday.getDate() / 7);\nconst weekLabelRow = FIRST_WEEK_LABEL_ROW + (weekOfMonth - 1) * BLOCK_SIZE;\n\n// ── LOOP THROUGH ALL ITEMS ────────────────────────────────────\nreturn $input.all().map(i => {\n  const item       = i.json;\n  const company    = (item.company   || '').trim();\n  const fn         = (item.function  || '').trim();\n  const totalHours = item.total_hours || 0;\n\n  const companyIndex = COMPANIES.findIndex(\n    c => c.toLowerCase().trim() === company.toLowerCase().trim()\n  );\n\n  if (companyIndex === -1) {\n    throw new Error(`Company \"${company}\" not found.`);\n  }\n\n  const column = FUNCTION_TO_COLUMN[fn];\n\n  if (!column) {\n    throw new Error(`Function \"${fn}\" not found.`);\n  }\n\n  const companyRow  = weekLabelRow + COMPANIES_OFFSET + companyIndex;\n  const cellAddress = `${tabName}!${column}${companyRow}`;\n\n  return {\n    json: {\n      cellAddress,\n      total_hours: totalHours,\n      _debug: { company, function: fn, column, companyRow, weekOfMonth, weekLabelRow }\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        352
+      ],
+      "id": "c6dec115-89ad-44c7-98b6-eaa576e4e1a5",
+      "name": "Code in JavaScript",
+      "executeOnce": false,
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "output",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        832,
+        352
+      ],
+      "id": "cda61545-c4ab-488e-85a1-12ea44c03d87",
+      "name": "Split Out"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1Blxy1i3M89J8N2Nsmd1Zobjj7EGbYH3X4lGT-iFdwww",
+          "mode": "list",
+          "cachedResultName": "Untitled sJan 26_Venture Support Timesheets_TESTINGpreadsheet",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Blxy1i3M89J8N2Nsmd1Zobjj7EGbYH3X4lGT-iFdwww/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 356874078,
+          "mode": "list",
+          "cachedResultName": "Elana",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1Blxy1i3M89J8N2Nsmd1Zobjj7EGbYH3X4lGT-iFdwww/edit#gid=356874078"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Meeting hours (pull from G Calendar)",
+              "displayName": "Meeting hours (pull from G Calendar)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Project hours outside of meetings (pull from Asana)",
+              "displayName": "Project hours outside of meetings (pull from Asana)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1280,
+        -192
+      ],
+      "id": "ee04ee89-60ac-404b-9707-9c40c1169a98",
+      "name": "Update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1eT58dZE9ssjMy34",
+          "name": "Delta40 investment Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## important update!\n\n**Go in line 25 of the code and replace 'Elena' with your sheet tab name like\n'Lyndsay' or 'Sean'**",
+        "height": 320,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        960,
+        160
+      ],
+      "typeVersion": 1,
+      "id": "1405efa9-1619-4de0-a00a-d9d5005344c3",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "## Add gmail credentials\n\n**Add your email adress like To: Nick@delta40.com\n\nMessage body: Hi Nick**",
+        "height": 368,
+        "width": 272,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1440,
+        128
+      ],
+      "typeVersion": 1,
+      "id": "3c0a34d3-9114-4070-9d83-0f678631872a",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "## Click to Add your work google calendar credentials\n\n**It takes 2minutes**",
+        "height": 368,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -224,
+        128
+      ],
+      "typeVersion": 1,
+      "id": "f8963d8e-6a7b-480b-af9e-75c13d4868bd",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/1Blxy1i3M89J8N2Nsmd1Zobjj7EGbYH3X4lGT-iFdwww/values/{{ $json.cellAddress }}?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"range\": \"{{ $json.cellAddress }}\",\n  \"majorDimension\": \"ROWS\",\n  \"values\": [[{{ $json.total_hours }}]]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1264,
+        352
+      ],
+      "id": "8a79f97b-8faf-4362-8c17-cd213a5965d8",
+      "name": "Google sheet http-node",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1eT58dZE9ssjMy34",
+          "name": "Delta40 investment Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "Click Here to add your google sheet credentials.\n\nIt is the same credential that you will use in the **Google sheet http-node** below",
+        "height": 304
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1216,
+        -352
+      ],
+      "typeVersion": 1,
+      "id": "ff4d9210-8d1d-4fba-a00d-76ebc36c3de4",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "content": "📅 DELTA40 TIMESHEET AGENT — MAIN WORKFLOW\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nWHAT IT DOES\nAutomatically scrapes each team member's Google Calendar \nevery Friday at 4pm EAT, classifies time spent by portfolio \ncompany and support function, writes results directly to \ntheir tab in the master Google Sheet, and emails them a \nsummary.\n\nFLOW\n1. TRIGGER — Fires every Friday at 4pm EAT\n2. GOOGLE CALENDAR — Fetches this week's events\n3. CODE NODE — Filters Mon 00:00 → Fri 23:59 EAT only. \n   Drops all-day events, declined events, zero-duration events\n4. IF NODE — Stops workflow if no events found this week\n5. AI AGENT (Gemini) — Classifies each event by company \n   and support function. Summarises into one row per \n   company/function combo. Outputs strict JSON.\n6. SPLIT OUT — Breaks JSON array into individual items\n7. CELL CALCULATOR — Maps each row to an exact cell address \n   in the person's sheet tab (e.g. Elana!C56)\n8. HTTP REQUEST — Writes hours directly to that cell via \n   Google Sheets API\n9. GMAIL — Sends short summary email with classified log \n   and link to sheet\n\nCREDENTIALS NEEDED (per person)\n- Google Calendar — their own OAuth (one-time setup)\n- Gmail — their own OAuth (one-time setup)\n- Google Sheets — shared admin credential\n\nTO PERSONALISE BEFORE SHARING\n- Change tabName in Cell Calculator to person's sheet tab name\n- Update COMPANIES array if production sheet differs\n- Replace sheet ID in HTTP Request URL and Gmail link",
+        "height": 640,
+        "width": 480
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -784,
+        -464
+      ],
+      "typeVersion": 1,
+      "id": "23c348b8-5ab3-4fa7-9102-29b30e14a0f0",
+      "name": "Sticky Note4"
+    }
+  ],
+  "connections": {
+    "Every Friday 4pm": {
+      "main": [
+        [
+          {
+            "node": "Fetch My Calendar Events1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "No Events This Week": {
+      "main": [
+        [],
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch My Calendar Events1": {
+      "main": [
+        [
+          {
+            "node": "Filter This Week Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter This Week Only": {
+      "main": [
+        [
+          {
+            "node": "No Events This Week",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Google sheet http-node",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google sheet http-node": {
+      "main": [
+        [
+          {
+            "node": "Send Summary Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b15d6b4b5227bc465d1a10452a42a9e178300547e5a10d3084ff41efc632f9b1"
+  }
+}
